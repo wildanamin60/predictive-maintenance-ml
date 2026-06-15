@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>PredictMaint — Machine Failure Detection</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+  <style>
+    /* ─── DESIGN TOKENS ─────────────────────────────── */
+    :root {
+      --bg:          #0A0E1A;
+      --surface:     #111827;
+      --surface-2:   #1a2233;
+      --border:      #1f2d45;
+      --accent:      #00D4FF;
+      --accent-dim:  rgba(0, 212, 255, 0.08);
+      --accent-glow: rgba(0, 212, 255, 0.25);
+      --danger:      #FF4D6D;
+      --danger-dim:  rgba(255, 77, 109, 0.08);
+      --danger-glow: rgba(255, 77, 109, 0.25);
+      --success:     #00E5A0;
+      --success-dim: rgba(0, 229, 160, 0.08);
+      --text-1:      #E8EDF5;
+      --text-2:      #7A8FA8;
+      --text-3:      #4A5A72;
+      --mono:        'IBM Plex Mono', monospace;
+      --sans:        'IBM Plex Sans', sans-serif;
+    }
+
+    /* ─── RESET ─────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--sans);
+      background: var(--bg);
+      color: var(--text-1);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ─── GRID BACKGROUND ───────────────────────────── */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(var(--border) 1px, transparent 1px),
+        linear-gradient(90deg, var(--border) 1px, transparent 1px);
+      background-size: 48px 48px;
+      opacity: 0.35;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ─── LAYOUT ─────────────────────────────────────── */
+    .wrapper {
+      position: relative;
+      z-index: 1;
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 48px 24px 80px;
+    }
+
+    /* ─── HEADER ─────────────────────────────────────── */
+    header {
+      margin-bottom: 56px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--accent);
+      background: var(--accent-dim);
+      border: 1px solid rgba(0, 212, 255, 0.2);
+      padding: 4px 12px;
+      border-radius: 4px;
+      margin-bottom: 20px;
+    }
+
+    .badge::before {
+      content: '';
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.3; }
+    }
+
+    h1 {
+      font-size: clamp(28px, 5vw, 44px);
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      line-height: 1.1;
+      color: var(--text-1);
+      margin-bottom: 12px;
+    }
+
+    h1 span {
+      color: var(--accent);
+    }
+
+    .subtitle {
+      font-size: 15px;
+      color: var(--text-2);
+      line-height: 1.6;
+      max-width: 520px;
+    }
+
+    /* ─── CARD ───────────────────────────────────────── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 32px;
+      margin-bottom: 20px;
+    }
+
+    .card-title {
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-3);
+      margin-bottom: 24px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .card-title::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    /* ─── FORM ───────────────────────────────────────── */
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+
+    @media (max-width: 580px) {
+      .form-grid { grid-template-columns: 1fr; }
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .field label {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-2);
+      letter-spacing: 0.03em;
+    }
+
+    .field .unit {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text-3);
+    }
+
+    .field input,
+    .field select {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text-1);
+      font-family: var(--mono);
+      font-size: 14px;
+      padding: 11px 14px;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      width: 100%;
+      -webkit-appearance: none;
+    }
+
+    .field input:focus,
+    .field select:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+
+    .field select option {
+      background: var(--surface-2);
+    }
+
+    /* ─── PRESETS ────────────────────────────────────── */
+    .preset-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 24px;
+    }
+
+    .preset-btn {
+      font-family: var(--mono);
+      font-size: 11px;
+      padding: 6px 14px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text-2);
+      cursor: pointer;
+      transition: all 0.15s;
+      letter-spacing: 0.05em;
+    }
+
+    .preset-btn:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    /* ─── SUBMIT BUTTON ──────────────────────────────── */
+    .btn-predict {
+      width: 100%;
+      margin-top: 28px;
+      padding: 16px;
+      background: var(--accent);
+      color: #000;
+      border: none;
+      border-radius: 10px;
+      font-family: var(--mono);
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s, box-shadow 0.2s;
+    }
+
+    .btn-predict:hover:not(:disabled) {
+      opacity: 0.88;
+      box-shadow: 0 0 24px var(--accent-glow);
+    }
+
+    .btn-predict:active:not(:disabled) {
+      transform: scale(0.99);
+    }
+
+    .btn-predict:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    /* ─── RESULT ─────────────────────────────────────── */
+    #result {
+      display: none;
+    }
+
+    .result-status {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 20px 24px;
+      border-radius: 10px;
+      margin-bottom: 24px;
+      border: 1px solid;
+    }
+
+    .result-status.normal {
+      background: var(--success-dim);
+      border-color: rgba(0, 229, 160, 0.3);
+    }
+
+    .result-status.failure {
+      background: var(--danger-dim);
+      border-color: rgba(255, 77, 109, 0.3);
+      animation: danger-pulse 2s infinite;
+    }
+
+    @keyframes danger-pulse {
+      0%, 100% { box-shadow: 0 0 0 0 var(--danger-glow); }
+      50%       { box-shadow: 0 0 16px 2px var(--danger-glow); }
+    }
+
+    .status-icon {
+      font-size: 32px;
+      flex-shrink: 0;
+    }
+
+    .status-label {
+      font-size: 11px;
+      font-family: var(--mono);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+
+    .status-label.normal { color: var(--success); }
+    .status-label.failure { color: var(--danger); }
+
+    .status-main {
+      font-size: 22px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+
+    /* ─── PROBABILITY BARS ───────────────────────────── */
+    .prob-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+
+    .prob-item {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+    }
+
+    .prob-label {
+      font-size: 11px;
+      font-family: var(--mono);
+      color: var(--text-3);
+      letter-spacing: 0.08em;
+      margin-bottom: 8px;
+    }
+
+    .prob-value {
+      font-size: 28px;
+      font-family: var(--mono);
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .prob-value.normal  { color: var(--success); }
+    .prob-value.failure { color: var(--danger); }
+
+    .prob-bar-track {
+      height: 4px;
+      background: var(--border);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .prob-bar-fill {
+      height: 100%;
+      border-radius: 4px;
+      transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .prob-bar-fill.normal  { background: var(--success); }
+    .prob-bar-fill.failure { background: var(--danger); }
+
+    /* ─── INPUT SUMMARY ──────────────────────────────── */
+    .input-summary {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px 20px;
+    }
+
+    .input-summary-title {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text-3);
+      letter-spacing: 0.08em;
+      margin-bottom: 12px;
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+
+    @media (max-width: 500px) {
+      .summary-grid { grid-template-columns: repeat(2, 1fr); }
+      .prob-grid    { grid-template-columns: 1fr; }
+    }
+
+    .summary-item {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .summary-key {
+      font-size: 10px;
+      color: var(--text-3);
+    }
+
+    .summary-val {
+      font-family: var(--mono);
+      font-size: 13px;
+      color: var(--text-1);
+    }
+
+    /* ─── LOADING SPINNER ────────────────────────────── */
+    .spinner {
+      display: inline-block;
+      width: 14px; height: 14px;
+      border: 2px solid rgba(0,0,0,0.3);
+      border-top-color: #000;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+      margin-right: 8px;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* ─── FOOTER ─────────────────────────────────────── */
+    footer {
+      margin-top: 48px;
+      text-align: center;
+      font-size: 12px;
+      color: var(--text-3);
+      font-family: var(--mono);
+    }
+
+    /* ─── ERROR TOAST ────────────────────────────────── */
+    #error-box {
+      display: none;
+      background: var(--danger-dim);
+      border: 1px solid rgba(255, 77, 109, 0.3);
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-size: 13px;
+      color: var(--danger);
+      margin-top: 16px;
+      font-family: var(--mono);
+    }
+  </style>
+</head>
+<body>
+<div class="wrapper">
+
+  <!-- HEADER -->
+  <header>
+    <div class="badge">Random Forest · AI4I 2020 Dataset</div>
+    <h1>Prediksi <span>Kegagalan Mesin</span><br/>Berbasis Machine Learning</h1>
+    <p class="subtitle">Masukkan data sensor mesin untuk memprediksi apakah mesin dalam kondisi normal atau berpotensi mengalami kegagalan.</p>
+  </header>
+
+  <!-- FORM INPUT -->
+  <div class="card">
+    <div class="card-title">Parameter Sensor Mesin</div>
+
+    <!-- Quick presets -->
+    <div class="preset-row">
+      <span style="font-size:11px;color:var(--text-3);align-self:center;margin-right:4px;">Contoh data:</span>
+      <button class="preset-btn" onclick="fillPreset('normal')">▶ Mesin Normal</button>
+      <button class="preset-btn" onclick="fillPreset('warning')">▶ Mesin Kritis</button>
+      <button class="preset-btn" onclick="fillPreset('failure')">▶ Mesin Failure</button>
+    </div>
+
+    <div class="form-grid">
+      <div class="field">
+        <label>Tipe Produk</label>
+        <select id="type">
+          <option value="L">L — Low Quality</option>
+          <option value="M" selected>M — Medium Quality</option>
+          <option value="H">H — High Quality</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Suhu Udara <span class="unit">[Kelvin]</span></label>
+        <input id="air_temperature" type="number" step="0.1" value="298.1" placeholder="298.1"/>
+      </div>
+
+      <div class="field">
+        <label>Suhu Proses <span class="unit">[Kelvin]</span></label>
+        <input id="process_temperature" type="number" step="0.1" value="308.6" placeholder="308.6"/>
+      </div>
+
+      <div class="field">
+        <label>Kecepatan Rotasi <span class="unit">[rpm]</span></label>
+        <input id="rotational_speed" type="number" value="1551" placeholder="1551"/>
+      </div>
+
+      <div class="field">
+        <label>Torsi <span class="unit">[Nm]</span></label>
+        <input id="torque" type="number" step="0.1" value="42.8" placeholder="42.8"/>
+      </div>
+
+      <div class="field">
+        <label>Keausan Alat <span class="unit">[menit]</span></label>
+        <input id="tool_wear" type="number" value="108" placeholder="108"/>
+      </div>
+    </div>
+
+    <button class="btn-predict" id="btn-predict" onclick="predict()">
+      Jalankan Prediksi
+    </button>
+
+    <div id="error-box"></div>
+  </div>
+
+  <!-- RESULT -->
+  <div class="card" id="result">
+    <div class="card-title">Hasil Prediksi</div>
+
+    <div class="result-status" id="result-status">
+      <div class="status-icon" id="status-icon"></div>
+      <div>
+        <div class="status-label" id="status-label"></div>
+        <div class="status-main" id="status-main"></div>
+      </div>
+    </div>
+
+    <div class="prob-grid">
+      <div class="prob-item">
+        <div class="prob-label">PROBABILITAS NORMAL</div>
+        <div class="prob-value normal" id="prob-normal">—</div>
+        <div class="prob-bar-track">
+          <div class="prob-bar-fill normal" id="bar-normal" style="width:0%"></div>
+        </div>
+      </div>
+      <div class="prob-item">
+        <div class="prob-label">PROBABILITAS FAILURE</div>
+        <div class="prob-value failure" id="prob-failure">—</div>
+        <div class="prob-bar-track">
+          <div class="prob-bar-fill failure" id="bar-failure" style="width:0%"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="input-summary">
+      <div class="input-summary-title">DATA INPUT YANG DIANALISIS</div>
+      <div class="summary-grid" id="summary-grid"></div>
+    </div>
+  </div>
+
+  <footer>
+    Proyek Akhir Machine Learning · Random Forest Classifier · AI4I 2020
+  </footer>
+</div>
+
+<script>
+  // ─── GANTI URL INI SETELAH DEPLOY ─────────────────────
+  // Saat development lokal: 'http://localhost:5000'
+  // Setelah deploy ke Vercel: ganti dengan URL API Vercel kamu
+  const API_URL = 'http://localhost:5000';
+  // ───────────────────────────────────────────────────────
+
+  const PRESETS = {
+    normal: {
+      type: 'L', air_temperature: 298.1,
+      process_temperature: 308.6, rotational_speed: 1551,
+      torque: 42.8, tool_wear: 50
+    },
+    warning: {
+      type: 'M', air_temperature: 302.5,
+      process_temperature: 312.0, rotational_speed: 1350,
+      torque: 58.0, tool_wear: 160
+    },
+    failure: {
+      type: 'H', air_temperature: 305.8,
+      process_temperature: 315.4, rotational_speed: 1200,
+      torque: 72.3, tool_wear: 220
+    }
+  };
+
+  function fillPreset(key) {
+    const p = PRESETS[key];
+    document.getElementById('type').value               = p.type;
+    document.getElementById('air_temperature').value    = p.air_temperature;
+    document.getElementById('process_temperature').value= p.process_temperature;
+    document.getElementById('rotational_speed').value   = p.rotational_speed;
+    document.getElementById('torque').value             = p.torque;
+    document.getElementById('tool_wear').value          = p.tool_wear;
+    // Reset result saat preset diganti
+    document.getElementById('result').style.display = 'none';
+    document.getElementById('error-box').style.display = 'none';
+  }
+
+  async function predict() {
+    const btn = document.getElementById('btn-predict');
+    const errBox = document.getElementById('error-box');
+
+    // Ambil nilai input
+    const payload = {
+      type:                document.getElementById('type').value,
+      air_temperature:     parseFloat(document.getElementById('air_temperature').value),
+      process_temperature: parseFloat(document.getElementById('process_temperature').value),
+      rotational_speed:    parseFloat(document.getElementById('rotational_speed').value),
+      torque:              parseFloat(document.getElementById('torque').value),
+      tool_wear:           parseFloat(document.getElementById('tool_wear').value),
+    };
+
+    // Validasi sederhana
+    for (const [k, v] of Object.entries(payload)) {
+      if (k !== 'type' && isNaN(v)) {
+        errBox.textContent = `⚠ Input "${k}" tidak valid. Pastikan semua field terisi angka.`;
+        errBox.style.display = 'block';
+        return;
+      }
+    }
+
+    errBox.style.display = 'none';
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span>Menganalisis...';
+
+    try {
+      const res = await fetch(`${API_URL}/api/predict`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json();
+
+      if (!data.success) throw new Error(data.error || 'Prediksi gagal');
+
+      showResult(data, payload);
+
+    } catch (err) {
+      errBox.textContent = `⚠ Error: ${err.message}. Pastikan server API sudah berjalan.`;
+      errBox.style.display = 'block';
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = 'Jalankan Prediksi';
+    }
+  }
+
+  function showResult(data, payload) {
+    const isFailure = data.prediction === 1;
+
+    // Status box
+    const statusEl  = document.getElementById('result-status');
+    const iconEl    = document.getElementById('status-icon');
+    const labelEl   = document.getElementById('status-label');
+    const mainEl    = document.getElementById('status-main');
+
+    statusEl.className = `result-status ${isFailure ? 'failure' : 'normal'}`;
+    iconEl.textContent  = isFailure ? '⚠️' : '✅';
+    labelEl.className   = `status-label ${isFailure ? 'failure' : 'normal'}`;
+    labelEl.textContent = isFailure ? 'PERINGATAN — KEGAGALAN TERDETEKSI' : 'STATUS — MESIN AMAN';
+    mainEl.textContent  = isFailure
+      ? 'Mesin berpotensi mengalami kegagalan. Segera lakukan inspeksi!'
+      : 'Mesin berjalan normal. Tidak ada indikasi kegagalan.';
+
+    // Probabilitas
+    document.getElementById('prob-normal').textContent  = `${data.probability_normal}%`;
+    document.getElementById('prob-failure').textContent = `${data.probability_failure}%`;
+
+    setTimeout(() => {
+      document.getElementById('bar-normal').style.width  = `${data.probability_normal}%`;
+      document.getElementById('bar-failure').style.width = `${data.probability_failure}%`;
+    }, 50);
+
+    // Summary input
+    const labelMap = {
+      type: 'Tipe', air_temperature: 'Suhu Udara',
+      process_temperature: 'Suhu Proses', rotational_speed: 'Rotasi',
+      torque: 'Torsi', tool_wear: 'Keausan'
+    };
+    const unitMap = {
+      type: '', air_temperature: ' K', process_temperature: ' K',
+      rotational_speed: ' rpm', torque: ' Nm', tool_wear: ' min'
+    };
+
+    document.getElementById('summary-grid').innerHTML = Object.entries(payload)
+      .map(([k, v]) => `
+        <div class="summary-item">
+          <span class="summary-key">${labelMap[k]}</span>
+          <span class="summary-val">${v}${unitMap[k]}</span>
+        </div>`)
+      .join('');
+
+    // Tampilkan result section
+    const resultEl = document.getElementById('result');
+    resultEl.style.display = 'block';
+    resultEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+</script>
+</body>
+</html>
